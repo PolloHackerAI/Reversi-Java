@@ -1,3 +1,4 @@
+import java.util.*;
 public class Board {
     private char[][] grid;
 
@@ -128,16 +129,10 @@ public class Board {
 
     // Verifica se il gioco è finito
     public boolean isGameOver() {
-        for (int i = 0; i < 8; i++) {
-            for (int j = 0; j < 8; j++) {
-                if (isValidMove(i, j, 'B') || isValidMove(i, j, 'W')) {
-                    return false;
-                }
-            }
-        }
-        return true;
+        return !hasValidMoves('B') && !hasValidMoves('W');
     }
 
+    // Ritorna il numero di pezzi di un dato colore
     public int countPieces(char color) {
         int count = 0;
         for (int row = 0; row < grid.length; row++) {
@@ -148,5 +143,30 @@ public class Board {
             }
         }
         return count;
+    }
+
+    // Metodo aggiunto: verifica se il giocatore ha mosse valide
+    public boolean hasValidMoves(char color) {
+        for (int row = 0; row < 8; row++) {
+            for (int col = 0; col < 8; col++) {
+                if (isValidMove(row, col, color)) {
+                    return true;
+                }
+            }
+        }
+        return false;
+    }
+
+    // Metodo aggiunto: ottiene tutte le mosse valide per un dato colore
+    public List<int[]> getValidMoves(char color) {
+        List<int[]> validMoves = new ArrayList<>();
+        for (int row = 0; row < 8; row++) {
+            for (int col = 0; col < 8; col++) {
+                if (isValidMove(row, col, color)) {
+                    validMoves.add(new int[]{row, col});
+                }
+            }
+        }
+        return validMoves;
     }
 }
