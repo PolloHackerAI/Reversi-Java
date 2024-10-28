@@ -12,12 +12,7 @@ public class ReversiGame extends JFrame {
     private JLabel statusLabel;
     private boolean isServer, myTurn, playingVsComputer = false;
     private char myColor;
-    private String ipAddress;
-    private int port;
-    private Socket socket;
-    private PrintWriter out;
-    private BufferedReader in;
-    private ServerSocket serverSocket;
+    private NetworkManager networkManager;
 
     public ReversiGame() {
         setTitle("Gioco Reversi");
@@ -49,16 +44,18 @@ public class ReversiGame extends JFrame {
     }
 
     private void setupNetwork(boolean asServer) {
+        networkManager = new NetworkManager();
         try {
             if (asServer) {
-                port = new Random().nextInt(16384) + 49152;
-                ipAddress = InetAddress.getLocalHost().getHostAddress();
-                serverSocket = new ServerSocket(port);
+                int port = new Random().nextInt(16384) + 49152;
+                String ipAddress = InetAddress.getLocalHost().getHostAddress();
                 JOptionPane.showMessageDialog(this, "In attesa di un avversario... IP: " + ipAddress + " Porta: " + port);
+                networkManager.setupServer(port);
                 new Server().start();
             } else {
-                ipAddress = JOptionPane.showInputDialog("Indirizzo IP del server:");
-                port = Integer.parseInt(JOptionPane.showInputDialog("Numero di porta:", "5000"));
+                String ipAddress = JOptionPane.showInputDialog("Indirizzo IP del server:");
+                int port = Integer.parseInt(JOptionPane.showInputDialog("Numero di porta:", "5000"));
+                networkManager.setupClient(ipAddress, port);
                 new Client().start();
             }
         } catch (IOException e) {
@@ -72,11 +69,13 @@ public class ReversiGame extends JFrame {
         cells = new JPanel[8][8];
         var boardPanel = new JPanel(new GridLayout(8, 8, 2, 2));
         boardPanel.setBackground(Color.BLACK);
-        for (int i = 0; i < 8; i++) for (int j = 0; j < 8; j++) {
-            cells[i][j] = new JPanel();
-            cells[i][j].setBackground(new Color(0, 100, 0));
-            cells[i][j].addMouseListener(new MoveListener(i, j));
-            boardPanel.add(cells[i][j]);
+        for (int i = 0; i < 8; i++) {
+            for (int j = 0; j < 8; j++) {
+                cells[i][j] = new JPanel();
+                cells[i][j].setBackground(new Color(0, 100, 0));
+                cells[i][j].addMouseListener(new MoveListener(i, j));
+                boardPanel.add(cells[i][j]);
+            }
         }
         var controlPanel = new JPanel(new BorderLayout());
         surrenderButton = new JButton(playingVsComputer ? "Arrenditi" : "Abbandona");
@@ -90,15 +89,17 @@ public class ReversiGame extends JFrame {
 
     private void updateBoard() {
         SwingUtilities.invokeLater(() -> {
-            for (int i = 0; i < 8; i++) for (int j = 0; j < 8; j++) {
-                cells[i][j].removeAll();
-                char piece = board.getPiece(i, j);
-                if (piece != '-') {
-                    var piecePanel = new JPanel();
-                    piecePanel.setPreferredSize(new Dimension(40, 40));
-                    piecePanel.setBackground(piece == 'B' ? Color.BLACK : Color.WHITE);
-                    piecePanel.setBorder(BorderFactory.createLineBorder(Color.BLACK, 1));
-                    cells[i][j].add(piecePanel);
+            for (int i = 0; i < 8; i++) {
+                for (int j = 0; j < 8; j++) {
+                    cells[i][j].removeAll();
+                    char piece = board.getPiece(i, j);
+                    if (piece != '-') {
+                        var piecePanel = new JPanel();
+                        piecePanel.setPreferredSize(new Dimension(40, 40));
+                        piecePanel.setBackground(piece == 'B' ? Color.BLACK : Color.WHITE);
+                        piecePanel.setBorder(BorderFactory.createLineBorder(Color.BLACK, 1));
+                        cells[i][j].add(piecePanel);
+                    }
                 }
             }
             updateStatusLabel();
@@ -110,8 +111,11 @@ public class ReversiGame extends JFrame {
             board.makeMove(row, col, myColor);
             updateBoard();
             myTurn = false;
-            if (playingVsComputer) new javax.swing.Timer(500, e -> makeComputerMove()).start();
-            else sendMove(row, col);
+            if (playingVsComputer) {
+                new javax.swing.Timer(500, e -> makeComputerMove()).start();
+            } else {
+                networkManager.sendMove(row, col);
+            }
             checkGameOver();
         }
     }
@@ -124,13 +128,16 @@ public class ReversiGame extends JFrame {
             updateBoard();
             myTurn = true;
             checkGameOver();
-        } else JOptionPane.showMessageDialog(this, "Il computer non ha mosse disponibili. È il tuo turno.");
+        } else {
+            JOptionPane.showMessageDialog(this, "Il computer non ha mosse disponibili. È il tuo turno.");
+        }
     }
 
     private void handleSurrender() {
-        if (playingVsComputer) askForNewGame();
-        else if (out != null) {
-            out.println("SURRENDER");
+        if (playingVsComputer) {
+            askForNewGame();
+        } else if (networkManager != null) {
+            networkManager.sendSurrender();
             JOptionPane.showMessageDialog(this, "Ti sei arreso!");
             showStartPanel();
         }
@@ -146,16 +153,18 @@ public class ReversiGame extends JFrame {
         }
     }
 
-    private void sendMove(int row, int col) {
-        out.println("MOVE " + row + " " + col);
-    }
-
     private void askForNewGame() {
         if (JOptionPane.showConfirmDialog(this, "Vuoi giocare di nuovo?", "Partita Terminata", JOptionPane.YES_NO_OPTION) == JOptionPane.YES_OPTION) {
-            if (playingVsComputer) startGame(true, false);
-            else if (isServer) setupNetwork(true);
-            else setupNetwork(false);
-        } else showStartPanel();
+            if (playingVsComputer) {
+                startGame(true, false);
+            } else if (isServer) {
+                setupNetwork(true);
+            } else {
+                setupNetwork(false);
+            }
+        } else {
+            showStartPanel();
+        }
     }
 
     private void updateStatusLabel() {
@@ -166,23 +175,31 @@ public class ReversiGame extends JFrame {
 
     private class MoveListener extends MouseAdapter {
         private final int row, col;
-        public MoveListener(int row, int col) { this.row = row; this.col = col; }
-        public void mouseClicked(MouseEvent e) { makeMove(row, col); }
+
+        public MoveListener(int row, int col) {
+            this.row = row;
+            this.col = col;
+        }
+
+        public void mouseClicked(MouseEvent e) {
+            makeMove(row, col);
+        }
     }
 
     private class Server extends Thread {
         public void run() {
             try {
-                socket = serverSocket.accept();
+                networkManager.waitForClient();
                 setupStreams();
-            } catch (IOException e) { showError(e); }
+            } catch (IOException e) {
+                showError(e);
+            }
         }
     }
 
     private class Client extends Thread {
         public void run() {
             try {
-                socket = new Socket(ipAddress, port);
                 setupStreams();
             } catch (IOException e) {
                 showError(e);
@@ -191,14 +208,16 @@ public class ReversiGame extends JFrame {
         }
     }
 
-    private void setupStreams() throws IOException {
-        out = new PrintWriter(socket.getOutputStream(), true);
-        in = new BufferedReader(new InputStreamReader(socket.getInputStream()));
+    private void setupStreams() {
         new Thread(() -> {
             try {
                 String inputLine;
-                while ((inputLine = in.readLine()) != null) processInput(inputLine);
-            } catch (IOException e) { showError(e); }
+                while ((inputLine = networkManager.receiveMessage()) != null) {
+                    processInput(inputLine);
+                }
+            } catch (IOException e) {
+                showError(e);
+            }
         }).start();
     }
 
@@ -209,12 +228,31 @@ public class ReversiGame extends JFrame {
             updateBoard();
             myTurn = true;
             checkGameOver();
-        } else if (input.equals("SURRENDER")) JOptionPane.showMessageDialog(this, "L'avversario si è arreso!");
+        } else if (input.equals("SURRENDER")) {
+            JOptionPane.showMessageDialog(this, "L'avversario si è arreso!");
+        }
     }
 
-    private void showError(Exception e) { e.printStackTrace(); JOptionPane.showMessageDialog(this, "Errore: " + e.getMessage()); }
-    private void updateContent(JComponent comp) { getContentPane().removeAll(); add(comp, BorderLayout.CENTER); revalidate(); repaint(); }
-    private void addComponents(JComponent board, JComponent control) { updateContent(new JPanel(new BorderLayout()) {{ add(board, BorderLayout.CENTER); add(control, BorderLayout.SOUTH); }}); }
+    private void showError(Exception e) {
+        e.printStackTrace();
+        JOptionPane.showMessageDialog(this, "Errore: " + e.getMessage());
+    }
 
-    public static void main(String[] args) { SwingUtilities.invokeLater(ReversiGame::new); }
+    private void updateContent(JComponent comp) {
+        getContentPane().removeAll();
+        add(comp, BorderLayout.CENTER);
+        revalidate();
+        repaint();
+    }
+
+    private void addComponents(JComponent board, JComponent control) {
+        updateContent(new JPanel(new BorderLayout()) {{
+            add(board, BorderLayout.CENTER);
+            add(control, BorderLayout.SOUTH);
+        }});
+    }
+
+    public static void main(String[] args) {
+        SwingUtilities.invokeLater(ReversiGame::new);
+    }
 }

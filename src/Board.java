@@ -1,155 +1,75 @@
-import java.util.*;
-public class Board {
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.List;
+
+class Board {
     private char[][] grid;
 
-    // Costruttore: inizializza la scacchiera
     public Board() {
         grid = new char[8][8];
-        for (int i = 0; i < 8; i++) {
-            for (int j = 0; j < 8; j++) {
-                grid[i][j] = '-';
-            }
-        }
-        // Posiziona i pezzi iniziali
+        for (int i = 0; i < 8; i++)
+            Arrays.fill(grid[i], '-');
         grid[3][3] = 'W';
         grid[3][4] = 'B';
         grid[4][3] = 'B';
         grid[4][4] = 'W';
     }
 
-    // Restituisce il pezzo in una data posizione
     public char getPiece(int row, int col) {
         return grid[row][col];
     }
 
-    // Verifica se il giocatore ha mosse valide e conta i pezzi
-    public String checkValidMovesAndCount() {
-        boolean hasValidMoveBlack = false;
-        boolean hasValidMoveWhite = false;
-        int blackCount = 0;
-        int whiteCount = 0;
-
-        for (int i = 0; i < 8; i++) {
-            for (int j = 0; j < 8; j++) {
-                if (grid[i][j] == 'B') {
-                    blackCount++;
-                } else if (grid[i][j] == 'W') {
-                    whiteCount++;
-                }
-                if (!hasValidMoveBlack && isValidMove(i, j, 'B')) {
-                    hasValidMoveBlack = true;
-                }
-                if (!hasValidMoveWhite && isValidMove(i, j, 'W')) {
-                    hasValidMoveWhite = true;
-                }
-            }
-        }
-
-        String result = "Pezzi neri: " + blackCount + ", Pezzi bianchi: " + whiteCount + "\n";
-        if (!hasValidMoveBlack && !hasValidMoveWhite) {
-            if (blackCount > whiteCount) {
-                result += "Il nero ha vinto!";
-            } else if (whiteCount > blackCount) {
-                result += "Il bianco ha vinto!";
-            } else {
-                result += "Pareggio!";
-            }
-        } else {
-            result += "La partita continua.";
-        }
-
-        return result;
-    }
-
-    // Verifica se una mossa è valida
     public boolean isValidMove(int row, int col, char color) {
-        if (grid[row][col] != '-') {
-            return false;
-        }
+        if (grid[row][col] != '-') return false;
 
+        boolean foundOpponent = false;
         char opponent = (color == 'B') ? 'W' : 'B';
-
-        for (int dr = -1; dr <= 1; dr++) {
-            for (int dc = -1; dc <= 1; dc++) {
-                if (dr == 0 && dc == 0) continue;
-
-                int r = row + dr;
-                int c = col + dc;
-                boolean foundOpponent = false;
-
-                while (r >= 0 && r < 8 && c >= 0 && c < 8) {
-                    if (grid[r][c] == opponent) {
-                        foundOpponent = true;
-                    } else if (grid[r][c] == color && foundOpponent) {
-                        return true;
-                    } else {
-                        break;
-                    }
-                    r += dr;
-                    c += dc;
-                }
+        for (int[] dir : new int[][]{{1, 0}, {0, 1}, {1, 1}, {-1, 0}, {0, -1}, {-1, -1}, {1, -1}, {-1, 1}}) {
+            if (checkDirection(row, col, dir[0], dir[1], color, opponent)) {
+                foundOpponent = true;
             }
         }
-
-        return false;
+        return foundOpponent;
     }
 
-    // Esegue una mossa
+    private boolean checkDirection(int row, int col, int dr, int dc, char color, char opponent) {
+        int r = row + dr, c = col + dc;
+        boolean foundOpponent = false;
+        while (r >= 0 && r < 8 && c >= 0 && c < 8 && grid[r][c] == opponent) {
+            foundOpponent = true;
+            r += dr;
+            c += dc;
+        }
+        return foundOpponent && r >= 0 && r < 8 && c >= 0 && c < 8 && grid[r][c] == color;
+    }
+
     public void makeMove(int row, int col, char color) {
         grid[row][col] = color;
+        flipPieces(row, col, color);
+    }
+
+    private void flipPieces(int row, int col, char color) {
         char opponent = (color == 'B') ? 'W' : 'B';
-
-        for (int dr = -1; dr <= 1; dr++) {
-            for (int dc = -1; dc <= 1; dc++) {
-                if (dr == 0 && dc == 0) continue;
-
-                int r = row + dr;
-                int c = col + dc;
-                boolean foundOpponent = false;
-                int flipCount = 0;
-
-                while (r >= 0 && r < 8 && c >= 0 && c < 8) {
-                    if (grid[r][c] == opponent) {
-                        foundOpponent = true;
-                        flipCount++;
-                    } else if (grid[r][c] == color && foundOpponent) {
-                        for (int i = 1; i <= flipCount; i++) {
-                            grid[row + i * dr][col + i * dc] = color;
-                        }
-                        break;
-                    } else {
-                        break;
-                    }
-                    r += dr;
-                    c += dc;
-                }
+        for (int[] dir : new int[][]{{1, 0}, {0, 1}, {1, 1}, {-1, 0}, {0, -1}, {-1, -1}, {1, -1}, {-1, 1}}) {
+            if (checkDirection(row, col, dir[0], dir[1], color, opponent)) {
+                flipDirection(row, col, dir[0], dir[1], color);
             }
         }
     }
 
-    // Verifica se il gioco è finito
-    public boolean isGameOver() {
-        return !hasValidMoves('B') && !hasValidMoves('W');
-    }
-
-    // Ritorna il numero di pezzi di un dato colore
-    public int countPieces(char color) {
-        int count = 0;
-        for (int row = 0; row < grid.length; row++) {
-            for (int col = 0; col < grid[row].length; col++) {
-                if (grid[row][col] == color) {
-                    count++;
-                }
-            }
+    private void flipDirection(int row, int col, int dr, int dc, char color) {
+        int r = row + dr, c = col + dc;
+        while (grid[r][c] != color) {
+            grid[r][c] = color;
+            r += dr;
+            c += dc;
         }
-        return count;
     }
 
-    // Metodo aggiunto: verifica se il giocatore ha mosse valide
     public boolean hasValidMoves(char color) {
-        for (int row = 0; row < 8; row++) {
-            for (int col = 0; col < 8; col++) {
-                if (isValidMove(row, col, color)) {
+        for (int i = 0; i < 8; i++) {
+            for (int j = 0; j < 8; j++) {
+                if (isValidMove(i, j, color)) {
                     return true;
                 }
             }
@@ -157,16 +77,25 @@ public class Board {
         return false;
     }
 
-    // Metodo aggiunto: ottiene tutte le mosse valide per un dato colore
+    public int countPieces(char color) {
+        int count = 0;
+        for (char[] row : grid) {
+            for (char piece : row) {
+                if (piece == color) count++;
+            }
+        }
+        return count;
+    }
+
     public List<int[]> getValidMoves(char color) {
-        List<int[]> validMoves = new ArrayList<>();
-        for (int row = 0; row < 8; row++) {
-            for (int col = 0; col < 8; col++) {
-                if (isValidMove(row, col, color)) {
-                    validMoves.add(new int[]{row, col});
+        List<int[]> moves = new ArrayList<>();
+        for (int i = 0; i < 8; i++) {
+            for (int j = 0; j < 8; j++) {
+                if (isValidMove(i, j, color)) {
+                    moves.add(new int[]{i, j});
                 }
             }
         }
-        return validMoves;
+        return moves;
     }
 }
